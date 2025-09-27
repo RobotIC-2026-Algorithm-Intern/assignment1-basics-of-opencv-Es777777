@@ -1,0 +1,263 @@
+#注：前后双井号的是魔改部分
+import os
+current_path = os.path.abspath(os.path.dirname(__file__))
+filepath=os.path.join(current_path, 'output.avi')#放在该py文件同一目录下
+'''
+    这是一个逐帧掩膜的调参分析的程序
+    请在上方区域输入视频的文件名
+    之后点击运行（未知问题较为卡顿）
+    操作方法:(按键可长按）
+            Q:后退5帧 W:后退1帧 
+            E:前进1帧 R:前进5帧
+            ESC:退出程序
+    为什么有两个H？因为H是色相环，是一个环
+    通常情况下可以把H2相关的都置0，只有发现只用H1无法满足需求时再使用H2
+'''
+#关闭警告  值得一提的是cv2没更新会有[WRN:0]无法关闭的报错。。。
+import warnings
+warnings.filterwarnings("ignore")
+import sys
+import cv2
+import numpy as np
+
+
+cap = cv2.VideoCapture(filepath)  #读取视频文件
+if cap.isOpened():
+    print("视频文件已成功打开！")
+else:
+    print("无法打开视频文件！")
+    exit()
+##
+# ==================== 最轻量HSV显示插件 ====================
+class HSVValueDisplay:
+    def __init__(self):
+        self.current_frame = None
+        self.last_x, self.last_y = -1, -1
+        
+    def setup_mouse_callback(self, window_name):
+        cv2.setMouseCallback(window_name, self._mouse_callback)
+    
+    def _mouse_callback(self, event, x, y, flags, param):
+        if event == cv2.EVENT_MOUSEMOVE and self.current_frame is not None:
+            if abs(x - self.last_x) > 3 or abs(y - self.last_y) > 3:  # 减少更新频率
+                self.last_x, self.last_y = x, y
+                if 0 <= x < self.current_frame.shape[1] and 0 <= y < self.current_frame.shape[0]:
+                    b, g, r = self.current_frame[y, x]
+                    hsv_frame = cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2HSV)
+                    h, s, v = hsv_frame[y, x]
+                    # 只在控制台输出，不修改图像
+                    print(f"\r位置:({x},{y}) BGR:({b},{g},{r}) HSV:({h},{s},{v})", end="", flush=True)
+    
+    def update_frame(self, frame):
+        self.current_frame = frame
+    
+    def get_display_frame(self):
+        return self.current_frame  # 直接返回原图，不修改
+
+hsv_display = HSVValueDisplay()
+##
+
+#判断在Win还是在Linux  如果是Win就1ms延时，Linux 40ms延时
+system_platform = sys.platform
+if 'win' in system_platform:
+    time = 1
+else:
+    time = 40
+try:
+    import Tkinter as tk
+except:
+    import tkinter as tk
+
+result = None
+class Test():
+    def __init__(self):
+        result = ''
+        self.root = tk.Tk()
+        self.root.title('逐帧掩膜')
+        self.root.geometry('500x500')
+        button = tk.Button(self.root,
+                           text='运行',
+                           height=4,
+                           width=20,
+                           command=self.quit)
+        button.pack(side='bottom')
+
+        self.textExample = tk.Text(self.root, height=3)  # 创建文本输入框
+        self.textExample.pack()  # 把Text放在window上面，显示Text这个控件
+
+        test = """
+    这是一个逐帧掩膜的调参分析的程序
+    请在上方空白区域输入视频的 绝对路径
+    之后点击运行（未知问题较为卡顿）
+    操作方法:(按键可长按）
+            Q:后退5帧 W:后退1帧 
+            E:前进1帧 R:前进5帧
+            ESC:退出程序
+丝滑版本请打开同目录下.py更改77行运行
+    YYJ -22/5/4
+                """
+
+        lb = tk.Label(self.root, text=test,  # 设置文本内容
+                      width=30,  # 设置label的宽度：30
+                      height=10,  # 设置label的高度：10
+                      justify='left',  # 设置文本对齐方式：左对齐
+                      anchor='nw',  # 设置文本在label的方位：西北方位
+                      font=('微软雅黑', 18),  # 设置字体：微软雅黑，字号：18
+                      fg='white',  # 设置前景色：白色
+                      bg='grey',  # 设置背景色：灰色
+                      padx=20,  # 设置x方向内边距：20
+                      pady=10)
+        lb.pack()
+
+        self.root.mainloop()
+
+    def quit(self):
+        global result
+        result = self.textExample.get("1.0", "end")  # 获取文本输入框的内容
+        self.root.destroy()
+
+
+
+
+# app = Test()
+# #print(app.result)
+#
+#
+# del app  #删除实例化对象
+# a = result   #'D:\\robot\job\FindBall\output.avi'
+
+
+Str = 'Lower: 0 0 0 0 \n Upper: 0 0 0 0'  #用于保存阈值的字符串
+
+def Onchange(x):  #滑块的回调函数
+    global Str
+    H1_Max = cv2.getTrackbarPos("H1-Max", "Trackbar")# 为什么有两个H？因为H是色相环，是一个环
+    H1_Min = cv2.getTrackbarPos("H1-Min", "Trackbar")#平常可以把H2相关的都置0
+    H2_Max = cv2.getTrackbarPos("H2-Max", "Trackbar")
+    H2_Min = cv2.getTrackbarPos("H2-Min", "Trackbar")
+    S_Max = cv2.getTrackbarPos("S-Max", "Trackbar")
+    S_Min = cv2.getTrackbarPos("S-Min", "Trackbar")
+    V_Max = cv2.getTrackbarPos("V-Max", "Trackbar")
+    V_Min = cv2.getTrackbarPos("V-Min", "Trackbar")
+    """
+    将这六个值保存为字符串后续放入TXT
+    格式为：
+        Lower: H1_Min S_Min V_Min H2_Min
+        Upper: H1_Max S_Max V_Max H2_Max
+    方便后续的直接字符串转list
+    """
+    Str = 'Lower: ' + str(H1_Min) + ' ' + str(S_Min) + ' ' + str(V_Min) + ' ' +str(H2_Min) +'\n' \
+        + 'Upper: ' + str(H1_Max) + ' ' + str(S_Max) + ' ' + str(V_Max) + ' ' +str(H2_Max)
+
+
+#cap = cv2.VideoCapture(0)  #设置摄像头为默认 0 号
+
+#创建一个滑块窗口
+cv2.namedWindow('Trackbar',cv2.WINDOW_FREERATIO)
+cv2.createTrackbar("H1-Min", "Trackbar", 0, 180, Onchange)
+cv2.createTrackbar("H1-Max", "Trackbar", 0, 180, Onchange)
+cv2.createTrackbar("H2-Min", "Trackbar", 0, 180, Onchange)
+cv2.createTrackbar("H2-Max", "Trackbar", 0, 180, Onchange)
+cv2.createTrackbar("S-Min", "Trackbar", 0, 255, Onchange)
+cv2.createTrackbar("S-Max", "Trackbar", 0, 255, Onchange)
+cv2.createTrackbar("V-Min", "Trackbar", 0, 255, Onchange)
+cv2.createTrackbar("V-Max", "Trackbar", 0, 255, Onchange)
+
+font = cv2.FONT_HERSHEY_COMPLEX  #导入cv2字体
+cv2.namedWindow('img',cv2.WINDOW_FREERATIO)  #创建新的img窗口用于显示摄像头图像
+
+
+##
+hsv_display.setup_mouse_callback('img')
+##
+
+
+
+
+i = 1
+
+while True:
+    
+    cap.set(cv2.CAP_PROP_POS_FRAMES, i)  # 设置要获取的帧号
+    
+    _, frame = cap.read()  #读取摄像头
+
+
+
+
+
+##
+    frame=cv2.rotate(frame, cv2.ROTATE_180)
+    #魔改小工具变倒过来
+    hsv_display.update_frame(frame)
+##
+
+    list = Str.split()  #将字符串切片（以空格为间隔保存为list）
+    Lower1 = np.array([int(list[1]), int(list[2]), int(list[3])])  #Lower 的值（包含强转 int， list变Numpy）
+    Upper1 = np.array([int(list[6]), int(list[7]), int(list[8])])  #Upper 的值（包含强转 int， list变Numpy）
+    Lower2 = np.array([int(list[4]), int(list[2]), int(list[3])])  #Lower 的值（包含强转 int， list变Numpy）
+    Upper2 = np.array([int(list[9]), int(list[7]), int(list[8])])  #Upper 的值（包含强转 int， list变Numpy）
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mask1 = cv2.inRange(hsv, Lower1, Upper1)
+    mask2 = cv2.inRange(hsv, Lower2, Upper2)
+    mask = cv2.bitwise_or(mask1, mask2)
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.erode(mask, kernel)   #HSV掩膜后的结果
+    #下面是寻找轮廓
+    contours, _ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        approx = cv2.approxPolyDP(cnt, 0.01 * cv2.arcLength(cnt, True), True)
+        x = approx.ravel()[0]
+        y = approx.ravel()[1]
+
+        if area > 400:
+
+            cv2.drawContours(frame, [approx], 0, (0, 0, 0), 5)
+
+            if len(approx) == 3:
+                cv2.putText(frame, "Triangle", (x, y), font, 1, (0, 0, 0))
+
+            elif len(approx) == 4:
+
+                cv2.putText(frame, "Rectangle", (x, y), font, 1, (0, 0, 0))
+            elif 10 < len(approx) < 20:
+                cv2.putText(frame, "Circle", (x, y), font, 1, (0, 0, 0))
+
+    cv2.namedWindow('HSV', cv2.WINDOW_NORMAL)
+    cv2.imshow('HSV', mask)  #显示掩膜
+    cv2.resizeWindow('HSV', 640, 480)
+    cv2.imshow('img', hsv_display.get_display_frame())
+    cv2.resizeWindow('img', 640, 480)
+    key = cv2.waitKey(time)
+    """
+    下面是快进快退切换帧数，er分别快进1，5帧  qw分别退后1，5帧
+    if 判断是防止超出了这个视频的长度下限与上限。
+    """
+    if key == ord('e'):
+        if i <cap.get(7) - 1:
+            i += 1
+        else:
+            i = i
+        # print(i)
+        # print(cap.get(7))
+    if key == ord('r'):
+        if i < cap.get(7) - 5:
+            i += 5
+        else:
+            i = i
+        # print(i)
+        # print(cap.get(7))
+    if key == ord('w'):
+        if i >0:
+            i -= 1
+    if key == ord('q'):
+        if i >0:
+            i -= 5
+
+    if key == 27:
+        break
+
+
+cv2.destroyAllWindows()
+
