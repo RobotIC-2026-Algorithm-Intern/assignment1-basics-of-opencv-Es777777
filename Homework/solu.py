@@ -8,9 +8,12 @@ import time
 from IPython.display import clear_output
 
 # 读取配置文件
+base_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(base_dir, 'config.json')
+
 class ReadConfig:
-    def __init__(self, config_file='config.json'):
-        self.config_file = '/home/koji/桌面/assignment1-basics-of-opencv-Es777777/Homework/config.json'
+    def __init__(self, config_file=config_path):
+        self.config_file = config_file
         self.data = self._load_config()
         self._extract_values()
     
